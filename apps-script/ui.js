@@ -147,6 +147,12 @@ function buildOpenActionsCard() {
 
 
 /**************************************
+ * Confirmation du nbre d'actions entegistrées
+ **************************************/
+// A déplacer : actuellement dans storage.js, fonction onValidateActions
+
+
+/**************************************
  * Utilitaire HTML
  **************************************/
 

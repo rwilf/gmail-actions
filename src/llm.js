@@ -3,6 +3,25 @@
  **************************************/
 
 function extractActionsWithLLM(cleanThread) {
+  var rawText = callLLM(cleanThread);
+
+  Logger.log('===== RAW LLM =====\n' + rawText);
+
+  var jsonText = extractJson(rawText);
+  jsonText = tryFixJsonArray(jsonText);
+
+  var actions = safeParseJson(jsonText);
+
+  actions = fallbackIfNeeded(actions, cleanThread);
+
+  return actions;
+}
+
+/***************************************
+* Appel au LLM OpenAI
+* **************************************/
+
+function callLLM(cleanThread) {
   var apiKey = getOpenAIApiKey();
   if (!apiKey) throw new Error('Clé API manquante');
 
@@ -23,41 +42,22 @@ function extractActionsWithLLM(cleanThread) {
     muteHttpExceptions: true
   };
 
-  var response = UrlFetchApp.fetch('https://api.openai.com/v1/chat/completions', options);
+  var response = UrlFetchApp.fetch(
+    'https://api.openai.com/v1/chat/completions',
+    options
+  );
+
   if (response.getResponseCode() !== 200) {
     throw new Error(response.getContentText());
   }
 
   var data = JSON.parse(response.getContentText());
-  var rawContent = data.choices[0].message.content;
-
-  // 🔍 DEBUG pour voir EXACTEMENT ce que le LLM renvoie
-  Logger.log('RAW LLM RESPONSE:\n' + rawContent);
-
-  var cleanedJson = extractJson(rawContent);
-  var result;
-
-  try {
-    result = JSON.parse(cleanedJson);
-  } catch (e) {
-    throw new Error(
-      'JSON invalide retourné par le LLM:\n' + cleanedJson
-    );
-  }
-
-  if (!result.actions || result.actions.length === 0) {
-    if (containsSolicitation(cleanThread)) {
-      result.actions = [{
-        title: 'Répondre à la demande',
-        description: 'Donner un retour ou une réponse au message',
-        confidence: 'fallback'
-      }];
-    }
-  }
-
-  return result;
+  return data.choices[0].message.content;
 }
 
+/***************************************
+* Construction du prompt pour le LLM
+* **************************************/
 
 function buildPrompt(cleanThread) {
   return (
@@ -86,19 +86,24 @@ function buildPrompt(cleanThread) {
   );
 }
 
+/***************************************
+* Extraction du JSON de la réponse LLM
+* **************************************/
 
 function extractJson(text) {
-  if (!text) {
-    throw new Error('Réponse LLM vide');
-  }
+  if (!text) throw new Error('Réponse LLM vide');
 
-  // Supprimer blocs ```json ... ```
   text = text.replace(/```json/i, '');
   text = text.replace(/```/g, '');
 
   return text.trim();
 }
 
+
+/***************************************
+* Code pour détecter si le texte contient
+* une sollicitation implicite (en Français)
+* **************************************/
 
 function containsSolicitation(text) {
   var patterns = [
@@ -122,6 +127,52 @@ function containsSolicitation(text) {
   return false;
 }
 
+/***************************************
+* Code de correction si le JSON retourné
+* comprend une erreur courante
+* **************************************/
+
+function tryFixJsonArray(text) {
+  // Cas fréquent : "}},{"
+  text = text.replace(/}\s*},\s*{/g, '},{');
+
+  // Supprimer virgules finales avant ] ou }
+  text = text.replace(/,\s*]/g, ']');
+  text = text.replace(/,\s*}/g, '}');
+
+  return text;
+}
+
+function safeParseJson(text) {
+  try {
+    var parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    Logger.log('JSON invalide après correction');
+    Logger.log(text);
+    return [];
+  }
+}
+
+/***************************************
+* Fallback si aucune action détectée
+* **************************************/
+
+function fallbackIfNeeded(actions, cleanThread) {
+  if (actions.length > 0) return actions;
+
+  if (containsSolicitation(cleanThread)) {
+    return [{
+      titre: 'Demande implicite',
+      action: 'Répondre à la sollicitation présente dans le message',
+      responsable: null,
+      urgence: 'normal',
+      source: 'Email'
+    }];
+  }
+
+  return [];
+}
 
 /***************************************
 * Récupération de la clé API OpenAI
