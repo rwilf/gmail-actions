@@ -1,5 +1,5 @@
 /**************************************************
- * Tests rapides des fonctions LLM en local :
+ * Tests rapides des fonctions LLM en local (sans appel OpenAI api) :
  * - extractJson, avec des réponses simulées (mocks)
  * - buildPrompt
  * - containsSolicitation, avec 3 exemples simples 

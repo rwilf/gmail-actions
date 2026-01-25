@@ -1,14 +1,12 @@
 /**************************************
  * LLM
  **************************************/
-
 function extractActionsWithLLM(cleanThread) {
   var rawText = callLLM(cleanThread);
 
   Logger.log('===== RAW LLM =====\n' + rawText);
 
   var jsonText = extractJson(rawText);
-  jsonText = tryFixJsonArray(jsonText);
 
   var actions = safeParseJson(jsonText);
 
@@ -20,7 +18,6 @@ function extractActionsWithLLM(cleanThread) {
 /***************************************
 * Appel au LLM OpenAI
 * **************************************/
-
 function callLLM(cleanThread) {
   var apiKey = getOpenAIApiKey();
   if (!apiKey) throw new Error('Clé API manquante');
@@ -58,7 +55,6 @@ function callLLM(cleanThread) {
 /***************************************
 * Construction du prompt pour le LLM
 * **************************************/
-
 function buildPrompt(cleanThread) {
   return (
     'Tu lis un thread d’emails professionnels, déjà nettoyé (sans signatures ni citations).\n\n' +
@@ -75,64 +71,28 @@ function buildPrompt(cleanThread) {
     'Pour chaque action, indique :\n' +
     '- titre du thread\n' +
     '- action\n' +
-    '- responsable (ou null)\n' +
+    '- responsable (ou Moi)\n' +
     '- urgence : low | normal | high\n' +
     '- source\n\n' +
 
     'Retourne UNIQUEMENT le corps JSON valide, sans inclure aucun texte, aucun commentaire, aucun backtick, sous la forme :\n' +
-    '[{ "titre":"...","action": "...", "responsable": null, "urgence": "normal", "source": "..." }]\n\n' +
+    '[{ "titre":"...","action": "...", "responsable": Moi, "urgence": "normal", "source": "..." }]\n\n' +
     'THREAD:\n' +
     cleanThread
   );
 }
 
 /***************************************
-* Extraction du JSON de la réponse LLM
+* Cleanning de la réponse LLM 
+* pour obtenir un JSON bien formaté
 * **************************************/
-
 function extractJson(text) {
   if (!text) throw new Error('Réponse LLM vide');
 
   text = text.replace(/```json/i, '');
   text = text.replace(/```/g, '');
+  text = text.trim();
 
-  return text.trim();
-}
-
-
-/***************************************
-* Code pour détecter si le texte contient
-* une sollicitation implicite (en Français)
-* **************************************/
-
-function containsSolicitation(text) {
-  var patterns = [
-    /\bretour(s)?\b/i,
-    /\bavis\b/i,
-    /\bremarque(s)?\b/i,
-    /\bsuggestion(s)?\b/i,
-    /\bcomment(s)?\b/i,
-    /\bqu’en pensez[- ]vous\b/i,
-    /\bpouvez[- ]vous\b/i,
-    /\bmerci de\b/i,
-    /\bquestion(s)?\b/i,
-    /\?/  // fallback large
-  ];
-
-  for (var i = 0; i < patterns.length; i++) {
-    if (patterns[i].test(text)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/***************************************
-* Code de correction si le JSON retourné
-* comprend une erreur courante
-* **************************************/
-
-function tryFixJsonArray(text) {
   // Cas fréquent : "}},{"
   text = text.replace(/}\s*},\s*{/g, '},{');
 
@@ -157,7 +117,6 @@ function safeParseJson(text) {
 /***************************************
 * Fallback si aucune action détectée
 * **************************************/
-
 function fallbackIfNeeded(actions, cleanThread) {
   if (actions.length > 0) return actions;
 
@@ -175,9 +134,34 @@ function fallbackIfNeeded(actions, cleanThread) {
 }
 
 /***************************************
+* Code pour détecter si le texte contient
+* une sollicitation implicite (en Français)
+* **************************************/
+function containsSolicitation(text) {
+  var patterns = [
+    /\bretour(s)?\b/i,
+    /\bavis\b/i,
+    /\bremarque(s)?\b/i,
+    /\bsuggestion(s)?\b/i,
+    /\bcomment(s)?\b/i,
+    /\bqu’en pensez[- ]vous\b/i,
+    /\bpouvez[- ]vous\b/i,
+    /\bmerci de\b/i,
+    /\bquestion(s)?\b/i,
+    /\?/  // fallback large
+  ];
+
+  for (var i = 0; i < patterns.length; i++) {
+    if (patterns[i].test(text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/***************************************
 * Récupération de la clé API OpenAI
 * **************************************/
-
 function getOpenAIApiKey() {
   return PropertiesService
     .getScriptProperties()

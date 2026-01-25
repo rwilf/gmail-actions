@@ -515,4 +515,3 @@ function markActionDone(e) {
 
   return buildOpenActionsCard();
 }
-

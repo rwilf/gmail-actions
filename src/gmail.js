@@ -1,7 +1,6 @@
 /**************************************
- * CONSTRUCTION DU THREAD
+ * Construction d'un thread nettoyé
  **************************************/
-
 function buildCleanThread(threadId) {
   var thread = GmailApp.getThreadById(threadId);
   var messages = thread.getMessages();
@@ -36,11 +35,9 @@ function buildCleanThread(threadId) {
   return output.join('\n\n---\n\n');
 }
 
-
 /**************************************
- * NETTOYAGE EMAIL (MVP)
+ * Nettoyage du corps d’un email
  **************************************/
-
 function cleanEmailBody(body) {
   if (!body) return '';
 

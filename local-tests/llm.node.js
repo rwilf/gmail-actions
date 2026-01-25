@@ -8,7 +8,7 @@ const vm = require('vm'); // permet à Node d’exécuter du code JS arbitraire 
 const path = require('path'); // lit le texte brut du fichier Apps Script -> Aucun require, aucun import, juste du texte JS
 
 const code = fs.readFileSync(
-  path.join(__dirname, '../apps-script/llm.js'),
+  path.join(__dirname, '../src/llm.js'),
   'utf8'
 );
 

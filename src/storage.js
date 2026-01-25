@@ -1,100 +1,138 @@
+var STORAGE_KEY = 'ACTIONS_V1';
+
 /**************************************
- * Sauvegarde des actions
+ * Lecture / Sauvegarde de toutes les actions
  **************************************/
-
-function onValidateActions(e) {
-  var validatedActions = [];
-  var actions = JSON.parse(e.parameters.actions);
-
-  for (var i = 0; i < actions.length; i++) {
-    var field = e.formInput['action_' + i];
-    if (field && field.indexOf('selected') !== -1) {
-      validatedActions.push(actions[i]);
-    }
-  }
-
-  saveActions(validatedActions, e.parameters.threadId);
-
-  return CardService.newCardBuilder()
-    .setHeader(
-      CardService.newCardHeader().setTitle('Actions enregistrées')
-    )
-    .addSection(
-      CardService.newCardSection()
-        .addWidget(
-          CardService.newTextParagraph()
-            .setText(validatedActions.length + ' action(s) enregistrée(s).')
-        )
-    )
-    .build();
+function getAllActions() {
+  var raw = PropertiesService.getUserProperties().getProperty(STORAGE_KEY);
+  return raw ? JSON.parse(raw) : [];
 }
 
-function saveActions(actions, threadId) {
-  var props = PropertiesService.getUserProperties();
-  var existing = props.getProperty('actions') || '[]'; // Je récupère tout ce qui existe déjà
-  var all = JSON.parse(existing); // Je le mets en mémoire (tableau JS)
+function saveAllActions(actionMap) {
+  PropertiesService.getUserProperties()
+    .setProperty(STORAGE_KEY, JSON.stringify(actionMap));
+}
+
+/**************************************
+ * Récupération des actions déjà existantes d’un thread donné
+ **************************************/
+function getActionsByThread(threadId) {
+  var all = getAllActions();
+  var result = [];
+
+  for (var id in all) {
+    if (all[id].threadId === threadId) {
+      result.push(all[id]);
+    }
+  }
+  return result;
+}
+
+/**************************************
+ * Fusion des actions extraites avec les actions existantes
+ * - évite les doublons
+ **************************************/
+function mergeExtractedWithExisting(extracted, existing) {
+  var existingByFp = {}; // index des actions existantes par fingerprint
+
+  existing.forEach(function (a) {
+    existingByFp[a.fingerprint] = a;
+  }); // construction de l’index
+
+  return extracted.map(function (a) {
+    if (existingByFp[a.fingerprint]) { // action déjà existante
+      var saved = existingByFp[a.fingerprint];
+
+      return {
+        fingerprint: a.fingerprint,
+        threadId: a.threadId,
+        action: saved.action,          // libellé utilisateur
+        originalAction: saved.originalAction || a.originalAction,
+        responsable: saved.responsable,
+        urgence: saved.urgence,
+        tags: saved.tags || [],
+        status: saved.status            // open / done / etc
+      };
+    }
+
+    return a; // nouvelle action
+  });
+}
+
+
+/*****************A SUPPRIMER*********************
+ * Validation d'une action par l'utilisateur (via son ID)
+ **************************************/
+function validateActionsOLD(fingerprints) {
+  var all = getAllActions();
+  var now = new Date().toISOString();
+
+  fingerprints.forEach(function (id) {
+    if (all[id]) {
+      all[id].status = 'validated';
+      all[id].updatedAt = now;
+    }
+  });
+
+  saveAllActions(all);
+}
+
+/**************************************
+ * Persistance des actions validées
+ **************************************/
+function persistValidatedActions(validatedActions) {
+  var allActions = getAllActions();
+  var now = Date.now();
   
-  for (var i = 0; i < actions.length; i++) {
-    all.push({
-      threadId: threadId,
-      titre: actions[i].titre,
-      responsable: actions[i].responsable,
-      description: actions[i].action,
-      status: 'open',
-      createdAt: new Date().toISOString()
-    });
-  }  // J’ajoute mes nouvelles actions
+  validatedActions.forEach(function (action) {
+    var existing = allActions.find(a => a.fingerprint === action.fingerprint); //
 
-  props.setProperty('actions', JSON.stringify(all)); // Je réécris la totalité dans le store
+    if (existing) {
+      // mise à jour complète
+      existing.action = action.action;
+      existing.responsable = action.responsable;
+      existing.urgence = action.urgence;
+      existing.tags = action.tags || [];
+      existing.status = 'open';
+      existing.updatedAt = now;
+    } else {
+      //action.subject = getThreadSubject(threadId);
+      action.createdAt = now;
+      action.updatedAt = now;
+      action.status = 'open';
+      allActions.push(action);
+    }
+  });
+
+  saveAllActions(allActions);
 }
+
+
+/* A CONSTRUIRE
+ function getOpenActions(e)
+*/
 
 /**************************************
- * Récupération des actions enregistrées
+ * Marquage d’une action comme done
  **************************************/
-
-function getOpenActions() {
-  var props = PropertiesService.getUserProperties();
-  var raw = props.getProperty('actions');
-  if (!raw) return [];
-
-  var actions = JSON.parse(raw);
-  var openActions = [];
-
-  for (var i = 0; i < actions.length; i++) {
-    if (actions[i].status === 'open') {
-      openActions.push(actions[i]);
-    }
+function markActionDone(fingerprint) {
+  var all = getAllActions();
+  if (all[fingerprint]) {
+    all[fingerprint].status = 'done';
+    all[fingerprint].updatedAt = new Date().toISOString();
+    saveAllActions(all);
   }
-  return openActions;
 }
 
-
+// REGROUPEMENTS
 /**************************************
- * Marquage des actions open -> done
+ * Regroupement des actions par thread
  **************************************/
-
-function markActionDone(e) {
-  var index = parseInt(e.parameters.index, 10); // index de l'action de la liste filtrée (open only) de l'UI, converti proprement en entier décimal
-
-  var props = PropertiesService.getUserProperties();
-  var raw = props.getProperty('actions'); // liste complète des actions stockées (open + done)
-  if (!raw) return;
-
-  var actions = JSON.parse(raw);
-
-  var openIndex = -1; // On doit rebalayer toutes les actions pour trouver la bonne car l’index affiché dans l’UI ≠ l’index réel dans le stockage.
-  for (var i = 0; i < actions.length; i++) {
-    if (actions[i].status === 'open') {
-      openIndex++;
-      if (openIndex === index) {
-        actions[i].status = 'done';
-        break;
-      }
-    }
-  }
-
-  props.setProperty('actions', JSON.stringify(actions));
-
-  return buildOpenActionsCard();
+function groupActionsByThread(actions) {
+  var map = {};
+  actions.forEach(function (a) {
+    if (!map[a.threadId]) map[a.threadId] = [];
+    map[a.threadId].push(a);
+  });
+  return map;
 }
-
